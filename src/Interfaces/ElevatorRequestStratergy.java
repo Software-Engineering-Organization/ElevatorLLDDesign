@@ -1,5 +1,7 @@
 package Interfaces;
 
-public interface ElevatorRequestStratergy {
+import Entities.Elevator;
 
+public interface ElevatorRequestStratergy {
+    public Elevator checkElevatorAvailability();
 }
