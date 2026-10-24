@@ -8,55 +8,54 @@ import Request.UserRequest;
 import java.util.List;
 
 public class SimpleLiftAssignmentStratergy implements ElevatorRequestStratergy {
-    List<Elevator> elevators;
-    UserRequest userRequest;
-
-    SimpleLiftAssignmentStratergy(List<Elevator> elevatorList, UserRequest userReqst){
-        elevators = elevatorList;
-        userRequest = userReqst;
-    }
 
     // check elevator availability
-    public Elevator checkElevatorAvailability(){
+    public boolean checkElevatorAvailability(List<Elevator> elevators, UserRequest userRequest){
         Elevator availableElevator = null;
-        availableElevator = findSameDirectionElevator();
+        boolean requestServed = findSameDirectionElevator(elevators, userRequest);
 
-        if(availableElevator != null){
-            return availableElevator;
+        if(requestServed){
+            return requestServed;
         }
 
-        availableElevator = checkIdle();
-
-        return availableElevator;
+        return checkIdle(elevators, userRequest);
     }
     // check lift in the UP/DOWN direction for user
-    private Elevator findSameDirectionElevator(){
+    private boolean findSameDirectionElevator(List<Elevator> elevators, UserRequest userRequest){
 
         if(userRequest.getDirection() == State.DOWN){
             for (Elevator lift : elevators){
-                if(lift.GetState() == State.DOWN && lift.GetFloor() >= userRequest.getCurrentFloor()){
-                    return lift;
+                if(lift.GetState() == State.DOWN && lift.GetFloor() > userRequest.getCurrentFloor()){
+                    lift.getTopToBottom().offer(userRequest.getCurrentFloor());
+                    return true;
                 }
             }
         }
         else if(userRequest.getDirection() == State.UP){
             for (Elevator lift : elevators){
-                if(lift.GetState() == State.UP && lift.GetFloor() <= userRequest.getCurrentFloor()){
-                    return lift;
+                if(lift.GetState() == State.UP && lift.GetFloor() < userRequest.getCurrentFloor()){
+                    lift.getBottomToTop().offer(userRequest.getCurrentFloor());
+                    return true;
                 }
             }
         }
-
-        return null;
+        return false;
     }
 
     // check for the IDLE lift
-    private Elevator checkIdle(){
+    private boolean checkIdle(List<Elevator> elevators, UserRequest userRequest){
         for (Elevator lift : elevators){
             if(lift.GetState() == State.IDLE){
-                return lift;
+                if(userRequest.getDirection() == State.DOWN){
+                    lift.getTopToBottom().offer(userRequest.getCurrentFloor());
+                    return true;
+                }
+                else{
+                    lift.getBottomToTop().offer(userRequest.getCurrentFloor());
+                    return true;
+                }
             }
         }
-        return null;
+        return false;
     }
 }

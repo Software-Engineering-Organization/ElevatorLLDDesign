@@ -39,4 +39,12 @@ public class Elevator {
     public int GetFloor(){
         return FloorNumber;
     }
+
+    public PriorityBlockingQueue<Integer> getTopToBottom() {
+        return topToBottom;
+    }
+
+    public PriorityBlockingQueue<Integer> getBottomToTop() {
+        return bottomToTop;
+    }
 }

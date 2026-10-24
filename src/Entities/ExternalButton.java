@@ -1,6 +1,7 @@
 package Entities;
 
 import Controller.ElevatorController;
+import Request.UserRequest;
 
 public class ExternalButton {
     ElevatorController elevatorController;
@@ -8,4 +9,11 @@ public class ExternalButton {
     ExternalButton(ElevatorController elevatorController){
         this.elevatorController = elevatorController;
     }
+
+    public void placeUserRequest(UserRequest userRequest){
+        elevatorController.assignElevatorToUserRequest(userRequest);
+        System.out.println("Request served successfully!!");
+        return;
+    }
+
 }
