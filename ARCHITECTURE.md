@@ -18,7 +18,7 @@ The codebase is a small object-oriented design rather than a complete elevator s
 
 - receiving user requests,
 - matching requests to an elevator based on direction and current state,
-- tracking elevator movement through direction-specific priority queues,
+- storing destination requests in direction-specific priority queues,
 - representing building, floor, and button entities.
 
 The core design pattern visible in the code is the Strategy pattern, where [src/Interfaces/ElevatorRequestStratergy.java](src/Interfaces/ElevatorRequestStratergy.java) defines the assignment contract and [src/Stratergies/SimpleLiftAssignmentStratergy.java](src/Stratergies/SimpleLiftAssignmentStratergy.java) provides the concrete logic.
@@ -42,8 +42,8 @@ The core design pattern visible in the code is the Strategy pattern, where [src/
 ### [src/Main.java](src/Main.java)
 
 - Responsibility: entry point of the project.
-- Current implementation: contains a minimal main method that prints `Elevator LLD design`.
-- Architectural role: demonstrates the project’s startup point, but does not instantiate the system model in its current form.
+- Current implementation: creates two elevators with internal-button objects, places one internal destination request on each, wraps each elevator in a thread, and starts both threads.
+- Architectural role: manually assembles and starts the current elevator runtime. It does not create a building or wire the external-request controller and assignment strategy.
 
 ### [src/Controller/ElevatorController.java](src/Controller/ElevatorController.java)
 
@@ -84,7 +84,10 @@ The core design pattern visible in the code is the Strategy pattern, where [src/
   - `FloorNumber`
   - `bottomToTop`
   - `topToBottom`
+- Runtime behavior: implements `Runnable`; `run()` prints the elevator number and floor once per second until interrupted. It does not move the elevator or consume queued floors.
 - Important methods:
+  - `run()`
+  - `PlaceInternalUserRequest(int floorNumber)`
   - `SetState(State state)`
   - `GetState()`
   - `SetFloor(int floorNo)`
@@ -136,9 +139,9 @@ The core design pattern visible in the code is the Strategy pattern, where [src/
 
 - Responsibility: queues a destination inside an elevator.
 - Important method:
-  - `placeInternalButtonRequest()`
+  - `placeInternalButtonRequest(Elevator elevator, int internalButtonFloorNumber)`
 - Behavior: inspects the elevator state and current floor, then adds the destination to either `bottomToTop` or `topToBottom`.
-- Architectural role: represents passenger-driven destination selection inside the lift.
+- Architectural role: represents destination selection inside the lift; the `Elevator` delegates to it from `PlaceInternalUserRequest(...)`.
 
 ## Class relationships
 
@@ -148,6 +151,10 @@ The core design pattern visible in the code is the Strategy pattern, where [src/
 classDiagram
     class ElevatorController {
         + assignElevatorToUserRequest(UserRequest): void
+    }
+
+    class Main {
+        + main(String[]): void
     }
 
     class ElevatorRequestStratergy {
@@ -178,13 +185,22 @@ classDiagram
     }
 
     class Elevator {
+        + run(): void
+        + PlaceInternalUserRequest(int): void
+        - elevatorNumber: int
+        - internalButton: InternalButton
         - state: State
+        - FloorNumber: int
         - bottomToTop: PriorityBlockingQueue~Integer~
         - topToBottom: PriorityBlockingQueue~Integer~
     }
 
     class InternalButton {
-        - internalButtonFloorNumber: int
+        + placeInternalButtonRequest(Elevator, int): void
+    }
+
+    class Runnable {
+        <<interface>>
     }
 
     class State {
@@ -196,15 +212,17 @@ classDiagram
 
     ElevatorController --> ElevatorRequestStratergy
     SimpleLiftAssignmentStratergy ..|> ElevatorRequestStratergy
-    ElevatorController "1" o-- "many" Elevator
-    Building "1" *-- "many" Floor
+    Main ..> Elevator : creates and starts
+    Elevator ..|> Runnable
+    ElevatorController "1" o-- "many" Elevator : receives list
+    Building "1" o-- "many" Floor : receives list
     Floor --> ExternalButton
     ExternalButton --> ElevatorController
-    ExternalButton --> UserRequest
+    ExternalButton ..> UserRequest : accepts request
     UserRequest --> State
     Elevator --> State
     Elevator --> InternalButton
-    InternalButton --> Elevator
+    InternalButton ..> Elevator : queues destination
 ```
 
 ### Relationship details
@@ -215,15 +233,15 @@ classDiagram
    - Why it exists: to separate assignment logic from the controller so request selection can vary without rewriting controller behavior.
    - Type: dependency and interface implementation.
 
-2. Composition / aggregation relationship between building and floors
+2. Aggregation relationship between building and floors
    - [src/Entities/Building.java](src/Entities/Building.java) owns a `List<Floor>` field.
-   - Why it exists: the building is conceptually composed of floors.
-   - Type: aggregation/composition-like containment, using a list field directly in the domain model.
+  - Why it exists: the building groups floor objects supplied to its constructor.
+  - Type: aggregation. The list is passed in; the code does not establish exclusive lifecycle ownership, so composition is not claimed.
 
 3. Association between floor and external button
    - [src/Entities/Floor.java](src/Entities/Floor.java) contains an `ExternalButton` instance.
    - Why it exists: a floor is associated with a button used to submit elevator requests.
-   - Type: strong local association.
+  - Type: direct association through a field.
 
 4. Association between external button and controller
    - [src/Entities/ExternalButton.java](src/Entities/ExternalButton.java) receives a controller dependency in its constructor.
@@ -232,107 +250,117 @@ classDiagram
 
 5. Elevator state and request queue relationship
    - [src/Entities/Elevator.java](src/Entities/Elevator.java) keeps `bottomToTop` and `topToBottom` queues.
-   - Why it exists: requests are grouped by direction and processed in floor order by priority queue behavior.
-   - Type: composition within the elevator object.
+   - Why it exists: requests are grouped by direction and ordered by priority queue behavior.
+   - Type: direct ownership of queue instances initialized by the elevator constructor.
 
 6. Internal button dependency
-   - [src/Entities/InternalButton.java](src/Entities/InternalButton.java) holds a reference to an `Elevator`.
-   - Why it exists: the internal button contributes destination requests to the elevator’s internal queue.
-   - Type: direct association.
+   - [src/Entities/Elevator.java](src/Entities/Elevator.java) holds an `InternalButton`; it passes itself and a destination floor to `placeInternalButtonRequest(...)`.
+   - Why it exists: the button applies the elevator’s state and floor to choose a destination queue.
+   - Type: elevator-to-button association, with a button-to-elevator method dependency (the button does not retain an elevator field).
+
+7. Controller-to-elevator relationship
+   - [src/Controller/ElevatorController.java](src/Controller/ElevatorController.java) receives and stores a `List<Elevator>`.
+   - Why it exists: the strategy scans those elevators to find a suitable one.
+   - Type: aggregation/reference to a supplied collection; the source does not establish lifecycle ownership.
+
+8. Object creation and wiring
+   - [src/Main.java](src/Main.java) directly constructs `Elevator` and `InternalButton` instances and starts each elevator in a `Thread`.
+   - The controller, strategy, building, floors, external buttons, and user requests are not instantiated by `Main` in the current entry point. No factory or dependency-injection framework is present.
 
 ## Component architecture
 
 ```mermaid
 flowchart LR
-    subgraph Domain[Domain model]
-        B[Building]
-        F[Floor]
-        U[UserRequest]
-        S[State]
+  subgraph Startup[Current startup path]
+    M[Main]
+    E[Elevator Runnable]
+    IB[InternalButton]
+    Q1[bottomToTop queue]
+    Q2[topToBottom queue]
     end
 
-    subgraph UserSurface[Request surface]
-        EB[ExternalButton]
+  subgraph Assignment[External-request path, not wired by Main]
+    EB[ExternalButton]
+    C[ElevatorController]
+    I[ElevatorRequestStratergy]
+    A[SimpleLiftAssignmentStratergy]
+    U[UserRequest]
     end
 
-    subgraph Control[Controller / strategy layer]
-        C[ElevatorController]
-        I[ElevatorRequestStratergy]
-        A[SimpleLiftAssignmentStratergy]
+  subgraph BuildingModel[Building model]
+    B[Building]
+    F[Floor]
     end
 
-    subgraph LiftRuntime[Elevator runtime]
-        E[Elevator]
-        IB[InternalButton]
-        Q1[bottomToTop]
-        Q2[topToBottom]
-    end
-
-    B --> F
-    F --> EB
-    EB --> C
-    C --> I
-    I --> A
-    A --> E
-    U --> EB
-    E --> Q1
-    E --> Q2
-    E --> IB
-    U --> S
-    E --> S
+  M -->|constructs and starts| E
+  E -->|delegates destination| IB
+  E --> Q1
+  E --> Q2
+  EB -->|submits request| C
+  C -->|uses| I
+  I -. implemented by .-> A
+  A -->|queues floor| E
+  B -->|contains list of| F
+  F --> EB
+  EB -. accepts .-> U
 ```
 
-This component view reflects the actual architecture present in the code: domain objects define building and floor concepts, external interaction reaches the controller, the controller delegates request matching to a strategy, and the elevator holds state and directional queues.
+The assignment components describe an available method path in the source, not a workflow assembled by `Main`. The active entry point only starts elevator threads and places internal destination requests.
 
 ## Execution flow
 
-### External request flow
+### Current application startup and runtime
 
 ```mermaid
 sequenceDiagram
-    participant User
-    participant Floor
-    participant ExternalButton
-    participant ElevatorController
-    participant Strategy as SimpleLiftAssignmentStratergy
-    participant Elevator
+  participant Main
+  participant Elevator
+  participant InternalButton
+  participant Thread
 
-    User->>Floor: request an elevator
-    Floor->>ExternalButton: create request context
-    ExternalButton->>UserRequest: construct currentFloor + direction
-    ExternalButton->>ElevatorController: assignElevatorToUserRequest(request)
-    ElevatorController->>Strategy: checkElevatorAvailability(elevators, request)
-
-    alt same-direction elevator is available
-        Strategy->>Elevator: add request floor to matching queue
-        Elevator-->>Strategy: accepted
-    else idle elevator is available
-        Strategy->>Elevator: add request floor to idle queue
-        Elevator-->>Strategy: accepted
-    end
-
-    Strategy-->>ElevatorController: true
-    ElevatorController-->>ExternalButton: request assigned
-    ExternalButton-->>User: Request served successfully!!
+  Main->>InternalButton: new InternalButton()
+  Main->>Elevator: new Elevator(number, button)
+  Main->>Elevator: PlaceInternalUserRequest(destination)
+  Elevator->>InternalButton: placeInternalButtonRequest(this, destination)
+  InternalButton->>Elevator: inspect state and current floor; enqueue destination
+  Main->>Thread: new Thread(elevator)
+  Main->>Thread: start()
+  Thread->>Elevator: run()
+  loop until interrupted
+    Elevator-->>Thread: print elevator number and current floor
+    Elevator->>Thread: sleep(1000)
+  end
 ```
 
-### Internal button flow
+The queue insertion is real, but the current `run()` loop does not read those queues or update the elevator floor/state.
+
+### External request assignment method path
+
+This sequence documents the method interactions that are implemented, but this controller path is not constructed or called by the current `Main` method.
 
 ```mermaid
 sequenceDiagram
-    participant Passenger
-    participant InternalButton
-    participant Elevator
+  participant Caller
+  participant ExternalButton
+  participant ElevatorController
+  participant Strategy as SimpleLiftAssignmentStratergy
+  participant Elevator
 
-    Passenger->>InternalButton: placeInternalButtonRequest()
-    InternalButton->>Elevator: read state and current floor
-    alt current state is DOWN
-        InternalButton->>Elevator: enqueue destination in bottomToTop or topToBottom
-    else current state is UP
-        InternalButton->>Elevator: enqueue destination in bottomToTop or topToBottom
-    else state is IDLE
-        InternalButton->>Elevator: choose queue based on floor comparison
-    end
+  Caller->>ExternalButton: placeUserRequest(request)
+  ExternalButton->>ElevatorController: assignElevatorToUserRequest(request)
+  ElevatorController->>Strategy: checkElevatorAvailability(elevators, request)
+
+  alt same-direction elevator found
+    Strategy->>Elevator: get direction queue and offer(request floor)
+    Elevator-->>Strategy: offer result (ignored)
+  else no same-direction elevator, idle elevator found
+    Strategy->>Elevator: get direction queue and offer(request floor)
+    Elevator-->>Strategy: offer result (ignored)
+  end
+
+  Strategy-->>ElevatorController: assignment result
+  ElevatorController-->>ExternalButton: return after assignment
+  ExternalButton-->>Caller: print request-served message
 ```
 
 ## Architectural findings
@@ -360,20 +388,17 @@ This is a clean layering for a small prototype, but it is not yet a full product
 
 The current codebase has several important architectural limitations that matter for accuracy:
 
-- [src/Main.java](src/Main.java) does not instantiate a real building or elevator configuration; it only prints a message.
+- [src/Main.java](src/Main.java) starts two elevator threads and places internal destination requests, but does not instantiate a building or wire external-request assignment.
+- `Elevator.run()` only prints the current floor and sleeps; it does not move between floors, consume either queue, or change the elevator state.
 - The elevator assignment loop in [src/Controller/ElevatorController.java](src/Controller/ElevatorController.java) uses a busy loop: it repeatedly calls the strategy until an assignment succeeds, without a time-based or state-based exit condition beyond the assignment result.
-- [src/Entities/Elevator.java](src/Entities/Elevator.java) stores data structures for requests but does not implement the actual movement loop, floor traversal, or dispatch scheduling.
-- The project currently models request assignment and queue placement, not end-to-end elevator motion.
-
+- The controller/strategy external-request path exists in methods but is not exercised by the current entry point.
 ### SOLID and coupling observations
 
-- Single Responsibility: each class is focused on a narrow responsibility, with the exception of a few small domain entities that are intentionally simple.
-- Dependency inversion: the controller depends on the strategy interface rather than a concrete assignment implementation.
-- Tight coupling: the design is structurally simple, but several classes are tightly coupled through direct constructor-based dependencies, such as `ExternalButton` to `ElevatorController` and `InternalButton` to `Elevator`.
-- No factory or dependency injection framework is present; object creation is direct and manual.
+- Dependency inversion is present in the assignment path: `ElevatorController` depends on `ElevatorRequestStratergy`, while `SimpleLiftAssignmentStratergy` implements that contract.
+- Responsibilities are split among the controller, strategy, elevator, and button classes. The controller also owns a retry loop, coupling request handling to an indefinite busy-wait policy.
+- `ExternalButton` retains a controller reference, and `Elevator` retains an internal-button reference. These are direct associations; the current `Main` manually constructs only the elevator/button runtime.
+- No factory or dependency-injection framework is present. The controller assignment graph is not assembled by the current entry point.
 
 ## Final verification notes
 
-This file is located at the repository root as `ARCHITECTURE.md`.
-
-The Markdown uses relative links for source files and Mermaid blocks for class, component, and sequence views. No README file exists in this workspace, so no README update was created because the prompt specifically instructs not to create one unless it already exists.
+This document is at the repository root and links to the source files with relative Markdown paths. The current repository has no root `README.md`, so no README was created or modified. The diagrams distinguish the active `Main` workflow from the external-request method path that is implemented but not currently wired into startup.
