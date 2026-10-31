@@ -3,7 +3,7 @@ package Entities;
 import java.util.Comparator;
 import java.util.concurrent.PriorityBlockingQueue;
 
-public class Elevator {
+public class Elevator implements Runnable {
     int elevatorNumber;
     InternalButton internalButton;
     State state;
@@ -13,7 +13,7 @@ public class Elevator {
     PriorityBlockingQueue<Integer> bottomToTop;
     PriorityBlockingQueue<Integer> topToBottom;
 
-    Elevator(int elevatorNumber, InternalButton internalButton){
+    public Elevator(int elevatorNumber, InternalButton internalButton){
         this.elevatorNumber = elevatorNumber;
         this.internalButton = internalButton;
         state = State.IDLE;
@@ -22,6 +22,31 @@ public class Elevator {
         bottomToTop = new PriorityBlockingQueue<>();
         topToBottom = new PriorityBlockingQueue<>(100, Comparator.reverseOrder());
 
+    }
+
+    @Override
+    public void run() {
+
+        while (true) {
+
+            System.out.println(
+                    "Elevator " + elevatorNumber +
+                            " is alive at floor " + FloorNumber
+            );
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+    }
+
+    public void PlaceInternalUserRequest(int floorNumber){
+        System.out.println("Placing the Internal Request...");
+        internalButton.placeInternalButtonRequest(this, floorNumber);
+
+        System.out.println("Internal Request placed successfully...");
     }
 
     public void SetState(State state){

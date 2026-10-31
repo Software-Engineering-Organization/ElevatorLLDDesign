@@ -1,15 +1,7 @@
 package Entities;
 
 public class InternalButton {
-    Elevator elevator;
-    int internalButtonFloorNumber;
-
-    InternalButton(Elevator elevator, int internalButtonFloorNumber){
-        this.elevator = elevator;
-        this.internalButtonFloorNumber = internalButtonFloorNumber;
-    }
-
-    public void placeInternalButtonRequest(){
+    public void placeInternalButtonRequest(Elevator elevator, int internalButtonFloorNumber){
         if(elevator.state == State.DOWN){
             if(elevator.GetFloor() < internalButtonFloorNumber){
                 System.out.println("chose bottomToTop");
